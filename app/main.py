@@ -17,20 +17,16 @@ from app import models
 
 load_dotenv()
 
-# Конфигурация
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "10"))
 RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 
-# Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Security
 security = HTTPBearer()
 
-# Pydantic модели для V1
 class BookV1Create(BaseModel):
     title: str = Field(..., description="Название книги")
     author: str = Field(..., description="Автор книги")
@@ -44,7 +40,6 @@ class BookV1Response(BookV1Create):
     class Config:
         from_attributes = True
 
-# Pydantic модели для V2
 class BookV2Create(BaseModel):
     title: str = Field(..., description="Название книги")
     author_id: int = Field(..., description="ID автора")
@@ -81,7 +76,6 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
-# Создание приложений
 app = FastAPI(
     title="Library Management API",
     description="REST API для управления библиотекой с поддержкой версионирования",
@@ -100,24 +94,20 @@ app_v2 = FastAPI(
     version="2.0.0"
 )
 
-# Middleware для rate limiting
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     client_ip = request.client.host
     current_time = datetime.utcnow()
     
-    # Получаем сессию БД
     db = next(get_db())
     
     try:
-        # Очистка старых записей
         old_time = current_time - timedelta(seconds=RATE_LIMIT_WINDOW)
         db.query(models.RateLimit).filter(
             models.RateLimit.client_ip == client_ip,
             models.RateLimit.request_time < old_time
         ).delete()
         
-        # Подсчет текущих запросов
         request_count = db.query(models.RateLimit).filter(
             models.RateLimit.client_ip == client_ip
         ).count()
@@ -138,7 +128,6 @@ async def rate_limit_middleware(request: Request, call_next):
                 }
             )
         
-        # Добавление текущего запроса
         rate_limit = models.RateLimit(
             client_ip=client_ip,
             request_time=current_time,
@@ -149,7 +138,6 @@ async def rate_limit_middleware(request: Request, call_next):
         
         response = await call_next(request)
         
-        # Добавление заголовков rate limit
         remaining = RATE_LIMIT_REQUESTS - request_count - 1
         response.headers["X-Limit-Remaining"] = str(remaining)
         
@@ -158,7 +146,6 @@ async def rate_limit_middleware(request: Request, call_next):
     finally:
         db.close()
 
-# Функции аутентификации
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -187,7 +174,6 @@ def verify_token(
     except jwt.JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# Функции идемпотентности
 def check_idempotency(
     idempotency_key: Optional[str],
     resource_type: str,
@@ -202,7 +188,6 @@ def check_idempotency(
     ).first()
     
     if stored:
-        # Проверка времени жизни (24 часа)
         if (datetime.utcnow() - stored.created_at).total_seconds() < 86400:
             return json.loads(stored.response_data)
         else:
@@ -218,7 +203,6 @@ def store_idempotency(
     db: Session
 ):
     if idempotency_key:
-        # Преобразуем datetime объекты в строки
         response_copy = response.copy()
         for key, value in response_copy.items():
             if isinstance(value, datetime):
@@ -232,7 +216,6 @@ def store_idempotency(
         db.add(idempotency)
         db.commit()
 
-# Эндпоинт аутентификации
 @app.post("/auth/login", response_model=Token, tags=["Authentication"])
 async def login(user: UserLogin, db: Session = Depends(get_db)):
     """Аутентификация пользователя с использованием JWT токенов."""
@@ -256,12 +239,10 @@ async def create_book_v1(
     db: Session = Depends(get_db)
 ):
     """Создание новой книги (версия 1) с поддержкой идемпотентности."""
-    # Проверка идемпотентности
     cached_response = check_idempotency(idempotency_key, "book_v1", db)
     if cached_response:
         return cached_response
     
-    # Проверка уникальности ISBN
     existing = db.query(models.BookV1).filter(models.BookV1.isbn == book.isbn).first()
     if existing:
         raise HTTPException(status_code=400, detail="Book with this ISBN already exists")
@@ -390,12 +371,10 @@ async def create_book_v2(
     if cached_response:
         return cached_response
     
-    # Проверка существования автора
     author = db.query(models.Author).filter(models.Author.id == book.author_id).first()
     if not author:
         raise HTTPException(status_code=400, detail="Author not found")
     
-    # Проверка уникальности ISBN
     existing = db.query(models.BookV2).filter(models.BookV2.isbn == book.isbn).first()
     if existing:
         raise HTTPException(status_code=400, detail="Book with this ISBN already exists")
@@ -447,7 +426,6 @@ async def update_book_v2(
     if not db_book:
         raise HTTPException(status_code=404, detail="Book not found")
     
-    # Проверка существования автора
     author = db.query(models.Author).filter(models.Author.id == book.author_id).first()
     if not author:
         raise HTTPException(status_code=400, detail="Author not found")
@@ -475,7 +453,6 @@ async def delete_book_v2(
     db.commit()
     return None
 
-# Монтирование версий API
 app.mount("/api/v1", app_v1)
 app.mount("/api/v2", app_v2)
 
@@ -496,7 +473,6 @@ async def root():
 async def health_check(db: Session = Depends(get_db)):
     """Проверка здоровья API и подключения к БД."""
     try:
-        # Проверка подключения к БД
         db.execute("SELECT 1")
         db_status = "connected"
     except Exception as e:

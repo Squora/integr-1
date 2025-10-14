@@ -99,8 +99,6 @@ library-api/
 │   └── env.py          # Конфигурация Alembic
 ├── scripts/
 │   └── init_db.py      # Скрипт инициализации БД
-├── tests/
-│   └── test_api.py     # Тесты
 ├── docker-compose.yml   # Конфигурация Docker
 ├── Dockerfile          # Образ приложения
 ├── requirements.txt    # Python зависимости
