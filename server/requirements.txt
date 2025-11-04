@@ -1,0 +1,5 @@
+SQLAlchemy==2.0.35
+psycopg2-binary==2.9.9
+aio-pika==9.4.1
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.1
